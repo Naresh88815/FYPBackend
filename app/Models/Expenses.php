@@ -10,7 +10,16 @@ class Expenses extends Model
     protected $primaryKey = 'expense_id';
 
     protected $fillable = [
-        'emp_id', 'label_id', 'amount', 'head_id', 'note', 'image', 'payment_type','status','updated_at','created_at'
+        'emp_id',
+        'label_id',
+        'amount',
+        'head_id',
+        'note',
+        'image',
+        'payment_type',
+        'status',
+        'updated_at',
+        'created_at'
     ];
 
     protected $casts = [
@@ -26,11 +35,16 @@ class Expenses extends Model
 
     public function label()
     {
-        return $this->belongsTo(ExpenseLabel::class,'label_id','label_id');
+        return $this->belongsTo(ExpenseLabel::class, 'label_id', 'label_id');
     }
 
     public function head()
     {
-        return $this->belongsTo(ExpenseHead::class,'head_id','head_id');
+        return $this->belongsTo(ExpenseHead::class, 'head_id', 'head_id');
+    }
+
+    public function statusUpdate()
+    {
+        return $this->belongsTo(StatusUpdate::class, 'expense_id', 'exp_id');
     }
 }

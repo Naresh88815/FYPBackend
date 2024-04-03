@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\ExpenseSummary;
+use App\Http\Controllers\UpdateStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthOtpController;
@@ -23,6 +25,10 @@ Route::group(['middleware' => ['api']], function () {
 
     // Route for adding and viewing expenses
     Route::post('expenses', [ExpensesController::class, 'addViewExpenses']);
+
+    Route::post('update_status', [UpdateStatus::class, 'updateExpenseStatus']);
+
+    Route::post('expense_summary', [ExpenseSummary::class,'getExpenseSummary']);
 
     // Route for adding and viewing users
     Route::post('user', [UserController::class, 'addViewUser']);
