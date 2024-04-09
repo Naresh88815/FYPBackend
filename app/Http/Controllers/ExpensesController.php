@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Expenses;
 use App\Models\User;
 use App\Models\StatusUpdate;
+use Intervention\Image\Facades\Image;
 
 class ExpensesController extends Controller
 {
@@ -35,7 +36,7 @@ class ExpensesController extends Controller
             'emp_id' => 'required|exists:users,user_id',
             'head_id' => 'required|exists:expense_heads,head_id',
             'label_id' => 'required|exists:expense_label,label_id',
-            'amount' => 'required|string|max:10',
+            'amount' => 'required|numeric|max:9999999999.99',
             'note' => 'nullable|string|max:500',
             'payment_type' => 'nullable|string|max:50',
             'status' => 'required|string',
@@ -45,18 +46,24 @@ class ExpensesController extends Controller
         $expense = new Expenses($request->except('image'));
 
         if ($request->hasFile('image')) {
-            $images = [];
-            foreach ($request->file('image') as $image) {
-                $image_name = time() . '_' . $image->getClientOriginalName();
-                $image->move(public_path('images'), $image_name);
-                $images[] = $image_name;
-            }
-            $expense->image = json_encode($images);
+            $expense->image = json_encode($this->handleImages($request->file('image')));
         }
 
         $expense->save();
 
         return response()->json(['status' => true, 'message' => 'Expense added successfully'], 201);
+    }
+
+
+    private function handleImages($images)
+    {
+        $imageNames = [];
+        foreach ($images as $image) {
+            $imageName = time() . '_' . $image->getClientOriginalName();
+            $image->move(public_path('images'), $imageName);
+            $imageNames[] = $imageName;
+        }
+        return $imageNames;
     }
 
     private function viewExpenses(Request $request)
@@ -112,26 +119,7 @@ class ExpensesController extends Controller
         $expenses = $query->paginate(10);
 
         $transformedExpenses = $expenses->map(function ($expense) {
-            $status = '';
-            switch ($expense->status) {
-                case 1:
-                    $status = 'Pending';
-                    break;
-                case 2:
-                    $status = 'Approved';
-                    break;
-                case 3:
-                    $status = 'Cancelled';
-                    break;
-                case 4:
-                    $status = 'Declined';
-                    break;
-                case 5:
-                    $status = 'Transfered';
-                    break;
-                default:
-                    $status = $expense->status;
-            }
+            $status = $this->getStatus($expense->status);
             return [
                 'expense_id' => $expense->expense_id,
                 'user_name' => $expense->user->name,
@@ -167,26 +155,7 @@ class ExpensesController extends Controller
         $expense = Expenses::with(['user', 'head', 'label'])->find($request->exp_id);
 
         if ($expense) {
-            $status = '';
-            switch ($expense->status) {
-                case 1:
-                    $status = 'Pending';
-                    break;
-                case 2:
-                    $status = 'Approved';
-                    break;
-                case 3:
-                    $status = 'Cancelled';
-                    break;
-                case 4:
-                    $status = 'Declined';
-                    break;
-                case 5:
-                    $status = 'Transferred';
-                    break;
-                default:
-                    $status = $expense->status;
-            }
+            $status = $this->getStatus($expense->status);
 
             $is_approve_button = $status == 'Pending';
 
@@ -259,36 +228,32 @@ class ExpensesController extends Controller
     {
         $searchTerm = $request->input('search');
 
-        $searchResults = collect();
+        $query = Expenses::query()
+            ->select('expenses.*')
+            ->leftJoin('users', 'expenses.emp_id', '=', 'users.user_id')
+            ->leftJoin('expense_heads', 'expenses.head_id', '=', 'expense_heads.head_id')
+            ->leftJoin('expense_label', 'expenses.label_id', '=', 'expense_label.label_id');
 
-        $userSearchResults = Expenses::whereHas('user', function ($query) use ($searchTerm) {
-            $query->where('name', 'like', '%' . $searchTerm . '%');
-        })->get();
+        if (!empty($searchTerm)) {
+            $query->where(function ($query) use ($searchTerm) {
+                $query->where('amount', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('users.name', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('expense_heads.name', 'like', '%' . $searchTerm . '%')
+                    ->orWhere('expense_label.label_name', 'like', '%' . $searchTerm . '%');
+            });
+        }
 
-        $headSearchResults = Expenses::whereHas('head', function ($query) use ($searchTerm) {
-            $query->where('name', 'like', '%' . $searchTerm . '%');
-        })->get();
-
-        $labelSearchResults = Expenses::whereHas('label', function ($query) use ($searchTerm) {
-            $query->where('label_name', 'like', '%' . $searchTerm . '%');
-        })->get();
-
-        $searchResults = $searchResults->merge($userSearchResults)
-            ->merge($headSearchResults)
-            ->merge($labelSearchResults);
-
-        $uniqueExpenses = $searchResults->unique('id');
-
-        $paginatedExpenses = $uniqueExpenses->paginate(10);
+        $paginatedExpenses = $query->paginate(10);
 
         $transformedExpenses = $paginatedExpenses->map(function ($expense) {
+            $status = $this->getStatus($expense->status);
             return [
                 'expense_id' => $expense->expense_id,
                 'user_name' => $expense->user->name,
                 'label_name' => $expense->label->label_name,
                 'heads_name' => $expense->head->name,
                 'amount' => $expense->amount,
-                'status' => $expense->status,
+                'status' => $status,
                 'date_added' => $expense->created_at->format('Y-m-d H:i:s'),
                 'image' => $expense->image,
             ];
@@ -307,8 +272,23 @@ class ExpensesController extends Controller
         ], 200);
     }
 
-   
 
+
+    private function getStatus($status)
+    {
+        switch ($status) {
+            case 1:
+                return 'Pending';
+            case 2:
+                return 'Approved';
+            case 3:
+                return 'Cancelled';
+            case 4:
+                return 'Declined';
+            case 5:
+                return 'Transferred';
+            default:
+                return $status;
+        }
+    }
 }
-
-
